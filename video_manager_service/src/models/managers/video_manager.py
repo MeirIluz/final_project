@@ -13,7 +13,6 @@ from src.globals.consts.consts_strings import ConstsStrings
 from src.globals.enums.response_status import ResponseStatus
 from src.globals.utils.utils import Utils
 from src.infrastructure.factories.handler_factory import HandlerFactory
-from src.infrastructure.interfaces.handlers.ialgorithm_handler import IAlgorithmHandler
 from src.infrastructure.interfaces.infrastructures.izmq_client_manager import IZMQClientManager
 from src.infrastructure.interfaces.managers.ivideo_manager import IVideoManager
 from src.models.data_classes.zmq_request import ZMQRequest
@@ -25,9 +24,8 @@ from src.globals.consts.logger_messages import LoggerMessages
 
 class VideoManager(IVideoManager):
 
-    def __init__(self, algorithm_handler: IAlgorithmHandler, zmq_client_handler: IZMQClientManager) -> None:
+    def __init__(self, zmq_client_handler: IZMQClientManager) -> None:
         self._test_mode = Utils.get_bool_env_var(ConstsStrings.TEST_MODE_ENV)
-        self._algorithm_handler = algorithm_handler
         self._zmq_client_handler = zmq_client_handler
         self._video_data = [
             data for data in self._get_data_from_config(ConstsStrings.CAMERAS_KEY)
@@ -107,7 +105,8 @@ class VideoManager(IVideoManager):
         response = self._zmq_client_handler.send_request(request)
         if response.status == ResponseStatus.SUCCESS:
             return response.data[key]
-        self._logger.log(ConstsStrings.LOG_NAME_ERROR, response.data[ConstsStrings.ERROR_MESSAGE])
+        self._logger.log(ConstsStrings.LOG_NAME_ERROR,
+                         response.data[ConstsStrings.ERROR_MESSAGE])
         raise ValueError("Failed fetching cameras data")
 
     def _process_frames_for_camera(self, camera_index: int) -> None:
@@ -116,9 +115,6 @@ class VideoManager(IVideoManager):
             frame = pipeline.read_frame()
             if frame is None:
                 continue
-            processed_frame = self._algorithm_handler.process_frame(
-                frame, camera_index
-            )
             if self._test_mode:
                 self._frame_times.append(time.time())
                 self._frame_count += 1
@@ -127,8 +123,8 @@ class VideoManager(IVideoManager):
                 )
                 self._real_fps = real_fps
             with self._lock_write_posed_frames:
-                self._posed_frames[camera_index] = processed_frame
-                pipeline.write_frame(processed_frame)
+                self._posed_frames[camera_index] = frame
+                pipeline.write_frame(frame)
 
     def _remove_shared_memory_files(self) -> None:
         file_prefixes = ConstsStrings.SHARED_MEMORY_FILES_PREFIXES
@@ -139,5 +135,4 @@ class VideoManager(IVideoManager):
                 os.remove(os.path.join(ConstsStrings.SHARED_MEMORY_PATH, file))
             except Exception as e:
                 self._logger.log(ConstsStrings.LOG_NAME_ERROR,
-                             LoggerMessages.SHARED_MEMORY_FILE_REMOVE_ERROR.format(file, e), level=logging.ERROR) 
-                
+                                 LoggerMessages.SHARED_MEMORY_FILE_REMOVE_ERROR.format(file, e), level=logging.ERROR)
